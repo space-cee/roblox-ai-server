@@ -9,6 +9,12 @@ const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+app.get("/", (req, res) => {
+  res.status(200).send("awake");
+});
+app.get("/", (req, res) => {
+  res.send("awake");
+});
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -112,6 +118,9 @@ async function summarizeConversation(messages) {
 // --------------------
 app.post('/chat', async (req, res) => {
   try {
+      if (!req.body || typeof req.body.message !== "string") {
+    return res.status(400).json({ reply: "Invalid request" });
+  }
     const { message, sessionId } = req.body;
 
     if (!sessionId || !message) {
