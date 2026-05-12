@@ -3,17 +3,16 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 
-const model = "gemma-4-26B-A4B";
+const model = "gemini-3.1-flash-lite";
+
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+
 app.get("/", (req, res) => {
   res.status(200).send("awake");
-});
-app.get("/", (req, res) => {
-  res.send("awake");
 });
 
 const apiKey = process.env.GEMINI_API_KEY;
@@ -87,11 +86,6 @@ Have fun! user messages will start after this line.
 
 `;
 
-
-
-
-
-
 // --------------------
 function blockSensitive(message) {
   return false;
@@ -99,6 +93,8 @@ function blockSensitive(message) {
 
 // --------------------
 async function summarizeConversation(messages) {
+  console.log("[AI] Summarizing conversation...");
+
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
     {
@@ -118,18 +114,27 @@ async function summarizeConversation(messages) {
 // --------------------
 app.post('/chat', async (req, res) => {
   try {
-      if (!req.body || typeof req.body.message !== "string") {
-    return res.status(400).json({ reply: "Invalid request" });
-  }
+    console.log("\n[AI] Incoming request:", req.body);
+
+    if (!req.body || typeof req.body.message !== "string") {
+      console.log("[AI] Invalid message format");
+      return res.status(400).json({ reply: "Invalid request" });
+    }
+
     const { message, sessionId } = req.body;
 
-    if (!sessionId || !message) {
+    if (!sessionId) {
+      console.log("[AI] Missing sessionId");
       return res.status(400).json({ error: "Bad request" });
     }
+
+    console.log("[AI] Session:", sessionId);
+    console.log("[AI] Message:", message);
 
     const now = Date.now();
 
     if (!conversations[sessionId]) {
+      console.log("[AI] Creating new conversation");
       conversations[sessionId] = {
         lastSeen: now,
         messages: [
@@ -149,28 +154,20 @@ app.post('/chat', async (req, res) => {
       parts: [{ text: message }]
     });
 
-    if (memory.messages.length > SUMMARY_TRIGGER) {
-      const old = memory.messages.slice(1, -MAX_MESSAGES);
-      if (old.length > 0) {
-        const summary = await summarizeConversation(old);
-        memory.messages = [
-          memory.messages[0],
-          {
-            role: "user",
-            parts: [{ text: "SYSTEM SUMMARY:\n" + summary }]
-          },
-          ...memory.messages.slice(-MAX_MESSAGES)
-        ];
-      }
-    }
+    console.log("[AI] Message history length:", memory.messages.length);
+    console.log("[AI] Using model:", model);
 
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       { contents: memory.messages }
     );
 
+    console.log("[AI] Raw response received");
+
     const reply =
       response.data.candidates?.[0]?.content?.parts?.[0]?.text || "No response";
+
+    console.log("[AI] Reply:", reply);
 
     memory.messages.push({
       role: "model",
@@ -180,8 +177,13 @@ app.post('/chat', async (req, res) => {
     res.json({ reply });
 
   } catch (err) {
-    console.error("Gemini error:", err.response?.data || err.message);
-    res.status(500).json({ error: "Something went wrong" });
+    console.log("🔥 GEMINI ERROR CAUGHT");
+    console.log(err.response?.data || err.message);
+
+    res.status(500).json({
+      error: "Something went wrong",
+      details: err.response?.data || err.message
+    });
   }
 });
 
@@ -190,11 +192,13 @@ setInterval(() => {
   const now = Date.now();
   for (const id in conversations) {
     if (now - conversations[id].lastSeen > SESSION_TTL) {
+      console.log("[AI] Cleaning session:", id);
       delete conversations[id];
     }
   }
 }, 5 * 60 * 1000);
 
 app.listen(port, () => {
-  console.log("Server running");
+  console.log("Server running on", port);
+  console.log("Model:", model);
 });
